@@ -147,15 +147,20 @@ metric_definition_impl::metric_definition_impl(
         metric_function f,
         description d,
         std::vector<label_instance> _labels,
-        std::vector<std::string> _aggregate_labels)
+        std::vector<label> _aggregate_labels)
         : name(name), type(type), f(f)
-        , d(d), enabled(true), aggregate_labels(std::move(_aggregate_labels)) {
+        , d(d), enabled(true) {
     for (auto i: _labels) {
         labels[i.key()] = i.value();
     }
     if (labels.find(shard_label.name()) == labels.end()) {
         labels[shard_label.name()] = shard();
     }
+
+    aggregate_labels.reserve(_aggregate_labels.size());
+    std::transform(_aggregate_labels.begin(), _aggregate_labels.end(),
+                   std::back_inserter(aggregate_labels),
+                   [](const label& l) { return l.name(); });
 }
 
 metric_definition_impl& metric_definition_impl::operator ()(bool _enabled) {

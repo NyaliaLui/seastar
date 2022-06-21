@@ -19,6 +19,7 @@
  * Copyright (C) 2016 ScyllaDB
  */
 
+#include <seastar/core/metrics.hh>
 #include <seastar/core/prometheus.hh>
 #include <sstream>
 
@@ -592,12 +593,10 @@ future<> write_text_representation(output_stream<char>& out, const config& ctx, 
             auto name = ctx.prefix + "_" + metric_family.name();
             found = false;
             histogram_aggregator histograms(metric_family.metadata().aggregate_labels);
+            counter_aggregator counters(metric_family.metadata().aggregate_labels);
             bool should_aggregate = !metric_family.metadata().aggregate_labels.empty();
-            metric_family.foreach_metric([&out, &ctx, &found, &name, &metric_family, &histograms, should_aggregate](auto value, auto value_info) mutable {
+            metric_family.foreach_metric([&out, &ctx, &found, &name, &metric_family, &histograms, &counters, should_aggregate](auto value, auto value_info) mutable {
                 std::stringstream s;
-                if (value.is_empty()) {
-                    return;
-                }
                 if (!found) {
                     if (metric_family.metadata().d.str() != "") {
                         s << "# HELP " << name << " " <<  metric_family.metadata().d.str() << "\n";
@@ -614,39 +613,36 @@ future<> write_text_representation(output_stream<char>& out, const config& ctx, 
                         write_histogram(s, ctx, name, value.get_histogram(), value_info.id.labels());
                     }
                 } else {
-                    add_name(s, name, value_info.id.labels(), ctx);
-                    std::string value_str;
-                    try {
-                        value_str = to_str(value);
-                    } catch (const std::range_error& e) {
-                        seastar_logger.debug("prometheus: write_text_representation: {}: {}", s.str(), e.what());
-                        value_str = "NaN";
-                    } catch (...) {
-                        auto ex = std::current_exception();
-                        // print this error as it's ignored later on by `connection::start_response`
-                        seastar_logger.error("prometheus: write_text_representation: {}: {}", s.str(), ex);
-                        std::rethrow_exception(std::move(ex));
+                    if (should_aggregate) {
+                        counters.add_counter(value, value_info.id.labels());
+                    } else {
+                        write_counter(s, ctx, name, value, value_info.id.labels());
                     }
-                    s << value_str;
-                    s << "\n";
                 }
                 out.write(s.str()).get();
                 thread::maybe_yield();
             });
-            if (!histograms.empty()) {
-                auto name = ctx.prefix + "_" + metric_family.name();
-                std::stringstream name_help;
-                if (metric_family.metadata().d.str() != "") {
-                    name_help << "# HELP " << name << " " <<  metric_family.metadata().d.str() << "\n";
-                }
-                name_help << "# TYPE " << name << " histogram"  << "\n";
-                out.write(name_help.str()).get();
-                for (auto&& h : histograms.get_histograms()) {
-                    std::stringstream s;
-                    write_histogram(s, ctx, name, h.second, h.first);
-                    out.write(s.str()).get();
-                    thread::maybe_yield();
-                }
+
+            std::stringstream aggregated_metrics_stream;
+
+            for (auto&& h : histograms.get_histograms()) {
+                write_histogram(aggregated_metrics_stream, ctx, name, h.second, h.first);
+                out.write(aggregated_metrics_stream.str()).get();
+
+                aggregated_metrics_stream.str({});
+                aggregated_metrics_stream.clear();
+
+                thread::maybe_yield();
+            }
+
+            for (auto&& h : counters.get_counters()) {
+                write_counter(aggregated_metrics_stream, ctx, name, h.second, h.first);
+                out.write(aggregated_metrics_stream.str()).get();
+
+                aggregated_metrics_stream.str({});
+                aggregated_metrics_stream.clear();
+
+                thread::maybe_yield();
             }
         }
     });

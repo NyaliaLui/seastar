@@ -545,6 +545,28 @@ void histogram_aggregator::add_histogram(const seastar::metrics::histogram& h, s
     _histograms[labels] += h;
 }
 
+class counter_aggregator {
+    std::vector<std::string> _remove_labels;
+    std::unordered_map<std::map<sstring, sstring>, mi::metric_value> _counters;
+public:
+    explicit counter_aggregator(std::vector<std::string> labels) : _remove_labels(std::move(labels)) {
+    }
+    void add_counter(const mi::metric_value& value, std::map<sstring, sstring> labels);
+    const std::unordered_map<std::map<sstring, sstring>, mi::metric_value>& get_counters() const {
+        return _counters;
+    }
+    bool empty() const {
+        return _counters.empty();
+    }
+};
+
+void counter_aggregator::add_counter(const mi::metric_value& value, std::map<sstring, sstring> labels) {
+    for (auto&& l : _remove_labels) {
+        labels.erase(l);
+    }
+    _counters[labels] += value;
+}
+
 future<> write_text_representation(output_stream<char>& out, const config& ctx, const metric_family_range& m) {
     return seastar::async([&ctx, &out, &m] () mutable {
         bool found = false;

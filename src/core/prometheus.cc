@@ -481,6 +481,24 @@ metric_family_range get_range(const metrics_families_per_shard& mf, const sstrin
 
 }
 
+void write_counter(std::stringstream& s, const config& ctx, const sstring& name, const mi::metric_value& value, std::map<sstring, sstring> labels) {
+    add_name(s, name, labels, ctx);
+    std::string value_str;
+    try {
+        value_str = to_str(value);
+    } catch (const std::range_error& e) {
+        seastar_logger.debug("prometheus: write_text_representation: {}: {}", s.str(), e.what());
+        value_str = "NaN";
+    } catch (...) {
+        auto ex = std::current_exception();
+        // print this error as it's ignored later on by `connection::start_response`
+        seastar_logger.error("prometheus: write_text_representation: {}: {}", s.str(), ex);
+        std::rethrow_exception(std::move(ex));
+    }
+    s << value_str;
+    s << "\n";
+}
+
 void write_histogram(std::stringstream& s, const config& ctx, const sstring& name, const seastar::metrics::histogram& h, std::map<sstring, sstring> labels) {
     add_name(s, name + "_sum", labels, ctx);
     s << h.sample_sum;

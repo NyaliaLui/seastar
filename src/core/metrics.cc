@@ -538,7 +538,7 @@ shared_ptr<metric_metadata> impl::metadata() {
     return _metadata;
 }
 
-std::vector<std::vector<metric_function>>& impl::functions() {
+std::vector<chunked_fifo<metric_function>>& impl::functions() {
     update_metrics_if_needed();
     return _current_metrics;
 }

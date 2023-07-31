@@ -363,7 +363,7 @@ class impl {
     bool _dirty = true;
     shared_ptr<metric_metadata> _metadata;
     std::set<sstring> _labels;
-    std::vector<std::vector<metric_function>> _current_metrics;
+    std::vector<chunked_fifo<metric_function>> _current_metrics;
     std::vector<relabel_config> _relabel_configs;
     std::unordered_multimap<seastar::sstring, int> _metric_families_to_replicate;
 public:
@@ -389,7 +389,7 @@ public:
 
     shared_ptr<metric_metadata> metadata();
 
-    std::vector<std::vector<metric_function>>& functions();
+    std::vector<chunked_fifo<metric_function>>& functions();
 
     void update_metrics_if_needed();
 
